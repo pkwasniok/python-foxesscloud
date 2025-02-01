@@ -3,8 +3,12 @@ import hashlib
 import urllib
 import requests
 import json
+import os
 
 FOXESSCLOUD_URL = "https://www.foxesscloud.com"
+
+class FoxessCloudException(Exception):
+    pass
 
 class FoxessCloud:
     def __init__(self, key):
@@ -16,7 +20,6 @@ class FoxessCloud:
 
     def getSignature(self, path, key, timestamp):
         signature = fr'{path}\r\n{key}\r\n{timestamp}'
-        print(signature)
         signature = hashlib.md5(signature.encode(encoding='UTF-8')).hexdigest()
         return signature
 
@@ -58,7 +61,7 @@ class FoxessCloud:
         data = response.json()
 
         if data["errno"] != 0:
-            return 0
+            raise FoxessCloudException(f'Server returned error {data['errno']}')
 
         remainingRequests = int(data["result"]["remaining"])
 
@@ -73,7 +76,7 @@ class FoxessCloud:
         data = response.json()
 
         if data["errno"] != 0:
-            return []
+            raise FoxessCloudException(f'Server returned error {data['errno']}')
 
         inverters = []
         for entry in data["result"]["data"]:
@@ -81,6 +84,15 @@ class FoxessCloud:
             inverters.append(inverter)
 
         return inverters
+
+    def getInverterBySerialNumber(self, serial):
+        inverters = self.getInverters()
+
+        for inverter in inverters:
+            if inverter.getSerial() == serial:
+                return inverter
+
+        return None
 
 class Inverter:
     def __init__(self, foxess, serial, name):
@@ -91,6 +103,12 @@ class Inverter:
 
     def __str__(self):
         return f'{self.serial} ({self.name})'
+
+    def getSerial(self):
+        return self.serial
+
+    def getName(self):
+        return self.name
 
     def fetchAvailableVariables(self):
         response = self.foxess.get("/op/v0/device/variable/get")
@@ -123,7 +141,7 @@ class Inverter:
 
             self.variables[item["variable"]] = variable
 
-    def fetchAllAvailableVariables(self):
+    def fetchAllVariables(self):
         self.fetchVariables(self.getAvailableVariables())
 
     def getAvailableVariables(self):
@@ -135,19 +153,16 @@ class Inverter:
     def getAllVariables(self):
         return self.variables
 
-foxess = FoxessCloud("0e146dff-2e2e-4d56-b460-ac6cedb54bfe")
 
+
+foxessCloudKey = os.getenv('KEY')
+
+foxess = FoxessCloud(foxessCloudKey)
 inverters = foxess.getInverters()
-inverter = inverters[0]
 
-inverter.fetchAvailableVariables()
+print("Requests left:", foxess.getRemainingRequests())
 
-inverter.fetchAllVariables()
-
-variables = inverter.getAllVariables()
-for name, variable in variables.items():
-    if variable != None:
-        print(f'{name}: {variable["value"]} {variable.get("unit")}')
-    else:
-        print(name, "N/A")
+print("Available inverters:")
+for inverter in inverters:
+    print(" -", inverter)
 
